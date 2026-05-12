@@ -1,0 +1,58 @@
+image: python:3.10-slim
+
+stages:
+  - build
+  - test
+  - dockerize
+
+variables:
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip/
+
+# ──────────────────────────────────────────
+# STAGE 1 : BUILD
+# ──────────────────────────────────────────
+build:
+  stage: build
+  script:
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+    - echo "✅ Dépendances installées avec succès"
+
+# ──────────────────────────────────────────
+# STAGE 2 : TEST
+# ──────────────────────────────────────────
+test:
+  stage: test
+  script:
+    - pip install -r requirements.txt
+    - pytest --cov=app tests/ --cov-report=term-missing
+    - echo "✅ Tests terminés"
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+
+# ──────────────────────────────────────────
+# STAGE 3 : DOCKERIZE (seulement si test OK)
+# ──────────────────────────────────────────
+dockerize:
+  stage: dockerize
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u $DOCKER_HUB_USERNAME -p $DOCKER_HUB_PASSWORD
+  script:
+    - docker build -t yosrabenboubaker/flask-products-api:$CI_COMMIT_SHORT_SHA .
+    - docker push yosrabenboubaker/flask-products-api:$CI_COMMIT_SHORT_SHA
+    - docker tag yosrabenboubaker/flask-products-api:$CI_COMMIT_SHORT_SHA
+                 yosrabenboubaker/flask-products-api:latest
+    - docker push yosrabenboubaker/flask-products-api:latest
+    - echo "✅ Image publiée sur Docker Hub"
+  only:
+    - develop
+    - main
